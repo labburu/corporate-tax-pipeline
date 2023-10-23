@@ -1,0 +1,116 @@
+parameters:
+- name: agentPoolName
+  default: 'TaxTech Pipelines PaaS - Windows'
+  type: string
+  values: 
+  - 'TaxTech Pipelines PaaS - Windows'
+  - 'TaxTech Pipelines PaaS - Dynamic'
+  - 'TaxTech Pipelines PaaS - Linux'
+
+trigger: 
+  branches:
+    include:
+    - 'main'
+
+name: $(Build.DefinitionName)-$(date:yyyyMMdd)$(rev:.r)
+
+stages:
+- stage: 'Build'
+  displayName: 'Build Project'
+  jobs:
+  - job: buildProject
+    timeoutInMinutes: 0
+    displayName: 'Build project'
+    pool:
+      name: ${{ parameters.agentPoolName }}
+    steps:
+    - template: './Build.Steps.yaml'
+  variables:
+  - group: "CheckmarxSCA"
+
+- stage: 'DEV'
+  displayName: 'Deploy - DEV'
+  jobs:
+  - deployment: 'DEV'
+    timeoutInMinutes: 0
+    displayName: 'Deploy DEV'
+    environment: 'DEV'
+    pool:
+      name: ${{ parameters.agentPoolName }}
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - template: './Deploy.Steps.yaml'
+            parameters:
+              repoPath: 'Sightline-Data-Exchange-Dev'
+              baseUrl: 'https://adb-8242060536470859.19.azuredatabricks.net/'
+              repoName: 'sde-gtw'
+  variables:
+  - group: "DatabricksLower"
+
+- stage: 'QA'
+  displayName: 'Deploy - QA'
+  dependsOn: 'DEV'
+  jobs:
+  - deployment: 'QA'
+    timeoutInMinutes: 0
+    displayName: 'Deploy QA'
+    environment: 'QA'
+    pool:
+      name: ${{ parameters.agentPoolName }}
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - template: './Deploy.Steps.yaml'
+            parameters:
+              repoPath: 'Sightline-Data-Exchange-QA'
+              baseUrl: 'https://adb-3949651894129016.16.azuredatabricks.net/'
+              repoName: 'sde-gtw'
+  variables:
+  - group: "DatabricksLower"
+
+- stage: 'STG'
+  displayName: 'Deploy - STG'
+  dependsOn: 'QA'
+  jobs:
+  - deployment: 'STG'
+    timeoutInMinutes: 0
+    displayName: 'Deploy STG'
+    environment: 'STG'
+    pool:
+      name: ${{ parameters.agentPoolName }}
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - template: './Deploy.Steps.yaml'
+            parameters:
+              repoPath: 'sightline-data-exchange-stg'
+              baseUrl: 'https://adb-3144463007451377.17.azuredatabricks.net/'
+              repoName: 'sde-gtw'
+  variables:
+  - group: "DatabricksLower"
+
+- stage: 'PROD'
+  displayName: 'Deploy - PROD'
+  dependsOn: 'STG'
+  jobs:
+  - deployment: 'PROD'
+    timeoutInMinutes: 0
+    displayName: 'Deploy PROD'
+    environment: 'PROD'
+    pool:
+      name: ${{ parameters.agentPoolName }}
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - template: './Deploy.Steps.yaml'
+            parameters:
+              repoPath: 'sightline-data-exchange-prod'
+              baseUrl: 'https://adb-1000868558190165.5.azuredatabricks.net/'
+              repoName: 'sde-gtw'
+  variables:
+  - group: "DatabricksProd"

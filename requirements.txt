@@ -1,0 +1,3 @@
+appinsights
+azure.eventhub
+delta-spark

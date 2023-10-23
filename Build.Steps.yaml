@@ -1,0 +1,15 @@
+steps:
+  - task: PublishPipelineArtifact@1
+    inputs:
+      targetPath: '$(Build.Repository.LocalPath)/'
+      artifact: 'Databricks'
+      publishLocation: 'pipeline'
+
+    # Run Checkmarx scan static
+  - task: PowerShell@2
+    continueOnError: true
+    displayName: 'Checkmarx scan'
+    enabled: true
+    inputs:
+      script: $(Build.SourcesDirectory)/securityscan/CheckmarxOpenSource.ps1 -Path '$(Build.SourcesDirectory)' -Project 'CxServer\PwC Tax\TTD\Sightline Data Exchange\SDE-GTW' -Token '$(Token)' -SCAUser '$(SCAUser)' -SCAPass '$(SCAPass)'
+      targetType: 'inline'

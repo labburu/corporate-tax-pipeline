@@ -1,0 +1,98 @@
+parameters:
+  repoPath: ''
+  baseUrl: ''
+  repoName: ''
+
+steps:
+- powershell: |
+    $body = @{
+      grant_type = "client_credentials"
+      client_id = "$(ClientId)"
+      client_secret = "$(ClientSecret)"
+      scope = "$(DatabricksScope)"
+    }
+    $response = Invoke-RestMethod 'https://login.microsoftonline.com/$(DirectoryId)/oauth2/v2.0/token' -Method 'POST' -Body $body -ContentType "application/x-www-form-urlencoded"
+    $aad_token = $response.access_token
+    Write-Host "##vso[task.setvariable variable=databricks_aad_token;]$aad_token"
+  displayName: "Generate Databricks AAD Token"
+
+- powershell: |
+    $body = @{
+      grant_type = "client_credentials"
+      client_id = "$(ClientId)"
+      client_secret = "$(ClientSecret)"
+      scope = "$(DevopsScope)"
+    }
+    $response = Invoke-RestMethod 'https://login.microsoftonline.com/$(DirectoryId)/oauth2/v2.0/token' -Method 'POST' -Body $body -ContentType "application/x-www-form-urlencoded"
+    $aad_token = $response.access_token
+    Write-Host "##vso[task.setvariable variable=devops_aad_token;]$aad_token"
+  displayName: "Generate Devops AAD Token"
+
+- powershell: |
+    $databricks_aad = "$env:databricks_aad_token"
+    $devops_aad = "$env:devops_aad_token"
+
+    $headers = @{
+      "Authorization" = "Bearer $databricks_aad"
+    }
+
+    $response = Invoke-RestMethod '${{ parameters.baseUrl }}api/2.0/git-credentials' -Method 'GET' -Headers $headers
+
+    if ($response.Credentials -ne $null) {
+      $credential_id = $response.Credentials[0].credential_id
+      $body = @{
+        "git_provider" = "azureDevOpsServices"
+        "git_username" = "sde-app"
+        "personal_access_token" = "$devops_aad"
+      } | ConvertTo-Json
+
+      $PatchEndPoint = "${{ parameters.baseUrl }}api/2.0/git-credentials/$credential_id"
+      $updateResponse = Invoke-RestMethod -Uri $PatchEndPoint -Method 'PATCH' -Headers $headers -Body $body -ContentType "application/json"
+      Write-Host "Updated Git Credentials"
+    } else {
+      $body = @{
+        "git_provider" = "azureDevOpsServices"
+        "git_username" = "sde-app"
+        "personal_access_token" = "$devops_aad"
+      } | ConvertTo-Json
+      $updateResponse = Invoke-RestMethod '${{ parameters.baseUrl }}api/2.0/git-credentials' -Method 'POST' -Headers $headers -Body $body -ContentType "application/json"
+      Write-Host "Created Git Credentials"
+    }
+  displayName: "Create/Update Databricks Devops Credentials"
+
+- powershell: |
+    $databricks_aad = "$env:databricks_aad_token"
+    $repoId = 0
+    $repoPath = "/Repos/${{ parameters.repoPath }}/${{ parameters.repoName }}"
+    $headers = @{
+      "Authorization" = "Bearer $databricks_aad"
+    }
+
+    $response = Invoke-RestMethod '${{ parameters.baseUrl }}api/2.0/repos' -Method 'GET' -Headers $headers
+    $repoArray = $response.repos
+
+    foreach ($repo in $repoArray) {
+      if ($repo.path -eq $repoPath) {
+        $repoId = $repo.id
+        break
+      }
+    }
+
+    if ($repoId -eq 0) {
+      $body = @{
+        "url" = "https://pwcustaxtech.visualstudio.com/SightlineData/_git/sde-gtw"
+        "provider" = "azureDevOpsServices"
+        "path" = "$repoPath"
+      } | ConvertTo-Json
+      $updateResponse = Invoke-RestMethod '${{ parameters.baseUrl }}api/2.0/repos' -Method 'POST' -Headers $headers -Body $body -ContentType "application/json"
+      Write-Host "Created Repo"
+    } else {
+      $body = @{
+        "branch" = "main"
+      } | ConvertTo-Json
+      $PatchEndPoint = "${{ parameters.baseUrl }}api/2.0/repos/$repoId"
+      $updateResponse = Invoke-RestMethod -Uri $PatchEndPoint -Method 'PATCH' -Headers $headers -Body $body -ContentType "application/json"
+      Write-Host "Updated Repo"
+    }
+
+  displayName: "Create/Update Repo"
